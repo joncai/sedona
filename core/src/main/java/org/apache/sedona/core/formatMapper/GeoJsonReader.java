@@ -19,6 +19,8 @@
 
 package org.apache.sedona.core.formatMapper;
 
+import java.util.List;
+
 import org.apache.sedona.core.enums.FileDataSplitter;
 import org.apache.sedona.core.spatialRDD.SpatialRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -28,6 +30,18 @@ import org.locationtech.jts.geom.Geometry;
 public class GeoJsonReader
         extends RddReader
 {
+
+    /**
+     * Read a SpatialRDD from a file.
+     *
+     * @param sc
+     * @param inputPath
+     * @return
+     */
+    public static SpatialRDD<Geometry> readToGeometryRDD(JavaSparkContext sc, String inputPath, List<String> propertyKeys)
+    {
+        return readToGeometryRDD(sc, inputPath, true, false, propertyKeys);
+    }
 
     /**
      * Read a SpatialRDD from a file.
@@ -50,10 +64,15 @@ public class GeoJsonReader
      * @param skipSyntacticallyInvalidGeometries whether allows Sedona to automatically skip syntax-invalid geometries, rather than throw errors
      * @return
      */
-    public static SpatialRDD<Geometry> readToGeometryRDD(JavaSparkContext sc, String inputPath, boolean allowInvalidGeometries, boolean skipSyntacticallyInvalidGeometries)
-    {
+    public static SpatialRDD<Geometry> readToGeometryRDD(JavaSparkContext sc, String inputPath, boolean allowInvalidGeometries, boolean skipSyntacticallyInvalidGeometries) {
+        return readToGeometryRDD(sc, inputPath, allowInvalidGeometries, skipSyntacticallyInvalidGeometries, null);
+    }
+
+    public static SpatialRDD<Geometry> readToGeometryRDD(JavaSparkContext sc, String inputPath,
+            boolean allowInvalidGeometries, boolean skipSyntacticallyInvalidGeometries, List<String> propertyKeys) {
         JavaRDD rawTextRDD = sc.textFile(inputPath);
         FormatMapper<Geometry> formatMapper = new FormatMapper<Geometry>(FileDataSplitter.GEOJSON, true);
+        formatMapper.propertyKeys = propertyKeys;
         formatMapper.allowTopologicallyInvalidGeometries = allowInvalidGeometries;
         formatMapper.skipSyntacticallyInvalidGeometries = skipSyntacticallyInvalidGeometries;
         return createSpatialRDD(rawTextRDD, formatMapper);

@@ -93,6 +93,10 @@ public class FormatMapper<T extends Geometry>
      * Crash on syntactically invalid geometries or skip them.
      */
     boolean skipSyntacticallyInvalidGeometries;
+    /**
+     * Keys for the input GeoJSON data properties
+     */
+    List<String> propertyKeys;
 
     /**
      * Instantiates a new format mapper.
@@ -116,6 +120,28 @@ public class FormatMapper<T extends Geometry>
     }
 
     /**
+     * Instantiates a new format mapper.
+     *
+     * @param startOffset the start offset
+     * @param endOffset the end offset
+     * @param splitter the splitter
+     * @param carryInputData the carry input data
+     */
+    public FormatMapper(int startOffset, int endOffset, FileDataSplitter splitter, boolean carryInputData, GeometryType geometryType, List<String> propertyKeys)
+    {
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+        this.splitter = splitter;
+        this.carryInputData = carryInputData;
+        this.geometryType = geometryType;
+        this.allowTopologicallyInvalidGeometries = true;
+        this.skipSyntacticallyInvalidGeometries = false;
+        this.propertyKeys = propertyKeys;
+        // Only the following formats are allowed to use this format mapper because each input has the geometry type definition
+        assert geometryType != null || splitter == FileDataSplitter.WKB || splitter == FileDataSplitter.WKT || splitter == FileDataSplitter.GEOJSON;
+    }
+
+    /**
      * Instantiates a new format mapper. This is extensively used in SedonaSQL.
      *
      * @param splitter
@@ -123,7 +149,18 @@ public class FormatMapper<T extends Geometry>
      */
     public FormatMapper(FileDataSplitter splitter, boolean carryInputData)
     {
-        this(0, -1, splitter, carryInputData, null);
+        this(0, -1, splitter, carryInputData, null, null);
+    }
+
+    /**
+     * Instantiates a new format mapper. This is extensively used in SedonaSQL.
+     *
+     * @param splitter
+     * @param carryInputData
+     */
+    public FormatMapper(FileDataSplitter splitter, boolean carryInputData, List<String> propertyKeys)
+    {
+        this(0, -1, splitter, carryInputData, null, propertyKeys);
     }
 
     /**
@@ -135,7 +172,39 @@ public class FormatMapper<T extends Geometry>
      */
     public FormatMapper(FileDataSplitter splitter, boolean carryInputData, GeometryType geometryType)
     {
-        this(0, -1, splitter, carryInputData, geometryType);
+        this(0, -1, splitter, carryInputData, geometryType, null);
+    }
+
+    public List<String> readGeoJsonPropertyNamesWithCustomInput(String geoJson)
+    {
+        if (geoJson.contains("Feature") || geoJson.contains("feature") || geoJson.contains("FEATURE")) {
+            if (geoJson.contains("properties")) {
+                Feature feature = (Feature) GeoJSONFactory.create(geoJson);
+                if (Objects.isNull(this.propertyKeys)) {
+                    if (Objects.isNull(feature.getId())) {
+                        return new ArrayList(feature.getProperties().keySet());
+                    }
+                    else {
+                        List<String> propertyList = new ArrayList<>(Arrays.asList("id"));
+                        for (String geoJsonProperty : feature.getProperties().keySet()) {
+                            propertyList.add(geoJsonProperty);
+                        }
+                        return propertyList;
+                    }
+                } else {
+                    if (Objects.isNull(feature.getId())) {
+                        return this.propertyKeys;
+                    }
+                    else {
+                        List<String> propertyList = new ArrayList<>(Arrays.asList("id"));
+                        propertyList.addAll(this.propertyKeys);
+                        return propertyList;
+                    }
+                }
+            }
+        }
+        logger.warn("[Sedona] The GeoJSON file doesn't have feature properties");
+        return null;
     }
 
     public static List<String> readGeoJsonPropertyNames(String geoJson)
@@ -191,20 +260,38 @@ public class FormatMapper<T extends Geometry>
                 nonSpatialData.add(trimQuotes(feature.getId().toString()));
             }
             if (featurePropertiesproperties != null) {
-                for (Object property : featurePropertiesproperties.values()
-                ) {
-                    if (property == null) {
-                        nonSpatialData.add("null");
-                    }
-                    else {
-                        try {
-                            // TODO fix
-                            if (Objects.isNull(objectMapper)) {
-                                objectMapper = new ObjectMapper();
+                if (Objects.isNull(this.propertyKeys)) {
+                    for (Object property : featurePropertiesproperties.values()
+                    ) {
+                        if (property == null) {
+                            nonSpatialData.add("null");
+                        } else {
+                            try {
+                                // TODO fix
+                                if (Objects.isNull(objectMapper)) {
+                                    objectMapper = new ObjectMapper();
+                                }
+                                nonSpatialData.add(trimQuotes(objectMapper.writeValueAsString(property)));
+                            } catch (final IOException e) {
+                                throw new RuntimeException(e);
                             }
-                            nonSpatialData.add(trimQuotes(objectMapper.writeValueAsString(property)));
-                        } catch (final IOException e) {
-                            throw new RuntimeException(e);
+                        }
+                    }
+                } else {
+                    for (String key : this.propertyKeys) {
+                        if (featurePropertiesproperties.get(key) == null) {
+                            nonSpatialData.add("null");
+                        } else {
+                            try {
+                                // TODO fix
+                                if (Objects.isNull(objectMapper)) {
+                                    objectMapper = new ObjectMapper();
+                                }
+                                nonSpatialData.add(trimQuotes(objectMapper.writeValueAsString(
+                                        featurePropertiesproperties.get(key))));
+                            } catch (final IOException e) {
+                                throw new RuntimeException(e);
+                            }
                         }
                     }
                 }
@@ -226,7 +313,7 @@ public class FormatMapper<T extends Geometry>
     {
         switch (splitter) {
             case GEOJSON:
-                return readGeoJsonPropertyNames(geoString);
+                return readGeoJsonPropertyNamesWithCustomInput(geoString);
             default:
                 return null;
         }
