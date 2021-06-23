@@ -48,6 +48,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.codehaus.jackson.map.ObjectMapper;
 
 public class FormatMapper<T extends Geometry>
         implements Serializable, FlatMapFunction<Iterator<String>, T>
@@ -81,6 +82,7 @@ public class FormatMapper<T extends Geometry>
      */
     transient protected GeometryFactory factory = new GeometryFactory();
     transient protected GeoJSONReader geoJSONReader = new GeoJSONReader();
+    transient protected ObjectMapper objectMapper = new ObjectMapper();
     transient protected WKTReader wktReader = new WKTReader();
     /**
      * Allow mapping of invalid geometries.
@@ -186,7 +188,7 @@ public class FormatMapper<T extends Geometry>
             ArrayList<String> nonSpatialData = new ArrayList<>();
             Map<String, Object> featurePropertiesproperties = feature.getProperties();
             if (feature.getId() != null) {
-                nonSpatialData.add(feature.getId().toString());
+                nonSpatialData.add(trimQuotes(feature.getId().toString()));
             }
             if (featurePropertiesproperties != null) {
                 for (Object property : featurePropertiesproperties.values()
@@ -195,7 +197,15 @@ public class FormatMapper<T extends Geometry>
                         nonSpatialData.add("null");
                     }
                     else {
-                        nonSpatialData.add(property.toString());
+                        try {
+                            // TODO fix
+                            if (Objects.isNull(objectMapper)) {
+                                objectMapper = new ObjectMapper();
+                            }
+                            nonSpatialData.add(trimQuotes(objectMapper.writeValueAsString(property)));
+                        } catch (final IOException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
                 }
             }
@@ -206,6 +216,10 @@ public class FormatMapper<T extends Geometry>
             geometry = geoJSONReader.read(geoJson);
         }
         return geometry;
+    }
+
+    private String trimQuotes(final String str) {
+        return str.replaceFirst("^\"", "").replaceFirst("\"$", "");
     }
 
     public List<String> readPropertyNames(String geoString)
